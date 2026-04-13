@@ -307,9 +307,12 @@ export function VideoPlayer({
 
   return (
     <Card className="overflow-hidden bg-gradient-to-br from-card to-card/50 backdrop-blur-sm border-primary/20 shadow-xl">
+      {/* Smaller video container - using max-h instead of aspect-video */}
       <div
-        className="aspect-video bg-black relative transition-all duration-700"
+        className="w-full bg-black relative transition-all duration-700"
         style={{
+          aspectRatio: "16/9",
+          maxHeight: "45vh",
           backgroundImage: `url(${mediaArt})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
@@ -318,79 +321,87 @@ export function VideoPlayer({
         <div ref={containerRef} className="w-full h-full" />
       </div>
 
-      <div className="p-6 space-y-4">
-        <div>
-          <h2 className="text-2xl font-bold mb-2 text-balance bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-            {video.title}
-          </h2>
-          {video.channelTitle && <p className="text-sm text-muted-foreground">{video.channelTitle}</p>}
-          <p className="text-sm text-muted-foreground mt-2">
-            {currentIndex + 1} / {totalVideos}
-          </p>
+      {/* More compact control area */}
+      <div className="p-3 sm:p-4 space-y-2">
+        {/* Title and info row */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base sm:text-lg font-bold line-clamp-2 text-balance bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
+              {video.title}
+            </h2>
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground mt-1">
+              {video.channelTitle && <span className="truncate">{video.channelTitle}</span>}
+              <span className="shrink-0">({currentIndex + 1} / {totalVideos})</span>
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={onPrevious}
-                className="hover:bg-primary/10 bg-transparent"
-                title={t.previous}
-              >
-                <SkipBack className="h-5 w-5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={onNext}
-                className="hover:bg-primary/10 bg-transparent"
-                title={t.next}
-              >
-                <SkipForward className="h-5 w-5" />
-              </Button>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={onAddToCompilation}
-                      className="hover:bg-primary/10 bg-transparent"
-                    >
-                      <Plus className="h-5 w-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t.addToCompilation}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+        {/* Controls row - all in one line */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Playback controls */}
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onPrevious}
+              className="hover:bg-primary/10 bg-transparent h-8 w-8"
+              title={t.previous}
+            >
+              <SkipBack className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onNext}
+              className="hover:bg-primary/10 bg-transparent h-8 w-8"
+              title={t.next}
+            >
+              <SkipForward className="h-4 w-4" />
+            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={onAddToCompilation}
+                    className="hover:bg-primary/10 bg-transparent h-8 w-8"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t.addToCompilation}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
 
-            <div className="flex-1">
-              <SortSelector value={sortMode} onChange={onSortModeChange} language={language} />
-            </div>
+          {/* Sort selector */}
+          <div className="flex-1 min-w-[120px]">
+            <SortSelector value={sortMode} onChange={onSortModeChange} language={language} />
+          </div>
 
-            <div className="flex gap-2">
-              <Button
-                variant={playMode === "normal" ? "default" : "outline"}
-                size="icon"
-                onClick={() => onPlayModeChange("normal")}
-                title={t.playNormal}
-              >
-                <Repeat className="h-5 w-5" />
-              </Button>
-              <Button
-                variant={playMode === "single-loop" ? "default" : "outline"}
-                size="icon"
-                onClick={() => onPlayModeChange("single-loop")}
-                title={t.playSingleLoop}
-              >
-                <Repeat1 className="h-5 w-5" />
-              </Button>
-            </div>
+          {/* Play mode controls */}
+          <div className="flex gap-1">
+            <Button
+              variant={playMode === "normal" ? "default" : "outline"}
+              size="icon"
+              onClick={() => onPlayModeChange("normal")}
+              title={t.playNormal}
+              className="h-8 w-8"
+            >
+              <Repeat className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={playMode === "single-loop" ? "default" : "outline"}
+              size="icon"
+              onClick={() => onPlayModeChange("single-loop")}
+              title={t.playSingleLoop}
+              className="h-8 w-8"
+            >
+              <Repeat1 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </div>
