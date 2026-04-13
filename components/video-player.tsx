@@ -307,12 +307,12 @@ export function VideoPlayer({
 
   return (
     <Card className="overflow-hidden bg-gradient-to-br from-card to-card/50 backdrop-blur-sm border-primary/20 shadow-xl">
-      {/* Smaller video container - using max-h instead of aspect-video */}
+      {/* Video container - balanced size for controls visibility */}
       <div
         className="w-full bg-black relative transition-all duration-700"
         style={{
           aspectRatio: "16/9",
-          maxHeight: "45vh",
+          maxHeight: "52vh",
           backgroundImage: `url(${mediaArt})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
