@@ -3,10 +3,11 @@
 import { useRef, useEffect, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { SkipBack, SkipForward, Repeat1, Repeat } from "lucide-react"
+import { SkipBack, SkipForward, Repeat1, Repeat, Plus } from "lucide-react"
 import type { Video, SortMode, PlayerSettings, PlayMode } from "@/app/page"
 import { SortSelector } from "@/components/sort-selector"
 import { useTranslation } from "@/lib/translations"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface VideoPlayerProps {
   video: Video
@@ -24,6 +25,7 @@ interface VideoPlayerProps {
   language: string
   hasUserInteracted: boolean
   onUserInteraction: () => void
+  onAddToCompilation: () => void
 }
 
 declare global {
@@ -49,6 +51,7 @@ export function VideoPlayer({
   language,
   hasUserInteracted,
   onUserInteraction,
+  onAddToCompilation,
 }: VideoPlayerProps) {
   const playerRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -347,6 +350,23 @@ export function VideoPlayer({
               >
                 <SkipForward className="h-5 w-5" />
               </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={onAddToCompilation}
+                      className="hover:bg-primary/10 bg-transparent"
+                    >
+                      <Plus className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t.addToCompilation}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
 
             <div className="flex-1">

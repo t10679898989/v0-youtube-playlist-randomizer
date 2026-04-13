@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { PlaylistManager } from "@/components/playlist-manager"
+import { PlaylistSidebar } from "@/components/playlist-sidebar"
 import { VideoPlayer } from "@/components/video-player"
 import { VideoList } from "@/components/video-list"
+import { AddToCompilationDialog } from "@/components/add-to-compilation-dialog"
 import { Coffee, Sun, Moon, ImageIcon, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -52,6 +54,7 @@ export default function Home() {
   const [theme, setTheme] = useState<ThemeMode>("dark")
   const [language, setLanguage] = useState<string>("zh-TW")
   const [hasUserInteracted, setHasUserInteracted] = useState(false)
+  const [showAddToCompilationDialog, setShowAddToCompilationDialog] = useState(false)
   const { toast } = useToast()
 
   const t = useTranslation(language)
@@ -378,6 +381,51 @@ export default function Home() {
     setSortMode("original")
   }
 
+  // Add current video to existing compilations
+  const handleAddVideoToCompilations = (compilationIds: string[]) => {
+    if (videos.length === 0) return
+    const currentVideo = videos[currentVideoIndex]
+    
+    setPlaylists((prev) => 
+      prev.map((p) => {
+        if (compilationIds.includes(p.id)) {
+          // Check if video already exists in compilation
+          if (p.videos.some(v => v.videoId === currentVideo.videoId)) {
+            return p
+          }
+          return { ...p, videos: [...p.videos, currentVideo] }
+        }
+        return p
+      })
+    )
+
+    const compilationName = playlists.find(p => compilationIds[0] === p.id)?.name || ""
+    toast({
+      title: t.videoAddedToCompilation,
+      description: (t.videoAddedToCompilationDesc as string).replace("{name}", compilationName),
+    })
+  }
+
+  // Create new compilation with current video
+  const handleCreateCompilationWithVideo = (name: string) => {
+    if (videos.length === 0) return
+    const currentVideo = videos[currentVideoIndex]
+
+    const compilation: Playlist = {
+      id: `compilation-${Date.now()}`,
+      name: name,
+      videos: [currentVideo],
+      createdAt: Date.now(),
+    }
+
+    setPlaylists((prev) => [...prev, compilation])
+    
+    toast({
+      title: t.compilationCreated,
+      description: (t.compilationCreatedDesc as string).replace("{name}", name),
+    })
+  }
+
   const applySorting = (mode: SortMode) => {
     let sorted = [...originalVideos]
 
@@ -501,12 +549,27 @@ export default function Home() {
       <div className="relative z-10 container mx-auto px-4 py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
-            <Button variant="outline" size="sm" className="gap-2 bg-background/80 backdrop-blur-sm" asChild>
-              <a href="https://ytplaylistcoffee.vercel.app/" target="_blank" rel="noopener noreferrer">
-                <Coffee className="h-4 w-4" />
-                {t.buyMeCoffee}
-              </a>
-            </Button>
+            <div className="flex items-center gap-2">
+              {playlists.length > 0 && (
+                <PlaylistSidebar
+                  playlists={playlists}
+                  currentPlaylistId={currentPlaylistId}
+                  onPlaylistLoad={handlePlaylistLoad}
+                  onPlaylistSelect={handlePlaylistSelect}
+                  onPlaylistDelete={handlePlaylistDelete}
+                  onPlaylistRefresh={handlePlaylistRefresh}
+                  onCreateCompilation={handleCreateCompilation}
+                  isLoading={isLoading}
+                  language={language}
+                />
+              )}
+              <Button variant="outline" size="sm" className="gap-2 bg-background/80 backdrop-blur-sm" asChild>
+                <a href="https://ytplaylistcoffee.vercel.app/" target="_blank" rel="noopener noreferrer">
+                  <Coffee className="h-4 w-4" />
+                  {t.buyMeCoffee}
+                </a>
+              </Button>
+            </div>
 
             <div className="flex items-center gap-2">
               <DropdownMenu>
@@ -542,17 +605,20 @@ export default function Home() {
           </div>
         </div>
 
-        <PlaylistManager
-          playlists={playlists}
-          currentPlaylistId={currentPlaylistId}
-          onPlaylistLoad={handlePlaylistLoad}
-          onPlaylistSelect={handlePlaylistSelect}
-          onPlaylistDelete={handlePlaylistDelete}
-          onPlaylistRefresh={handlePlaylistRefresh}
-          onCreateCompilation={handleCreateCompilation}
-          isLoading={isLoading}
-          language={language}
-        />
+        {/* Show PlaylistManager only when no playlists exist (first time user) */}
+        {playlists.length === 0 && (
+          <PlaylistManager
+            playlists={playlists}
+            currentPlaylistId={currentPlaylistId}
+            onPlaylistLoad={handlePlaylistLoad}
+            onPlaylistSelect={handlePlaylistSelect}
+            onPlaylistDelete={handlePlaylistDelete}
+            onPlaylistRefresh={handlePlaylistRefresh}
+            onCreateCompilation={handleCreateCompilation}
+            isLoading={isLoading}
+            language={language}
+          />
+        )}
 
         {videos.length > 0 && (
           <div className="mt-8 space-y-6">
@@ -572,6 +638,7 @@ export default function Home() {
               language={language}
               hasUserInteracted={hasUserInteracted}
               onUserInteraction={() => setHasUserInteracted(true)}
+              onAddToCompilation={() => setShowAddToCompilationDialog(true)}
             />
             <VideoList
               videos={videos}
@@ -580,6 +647,19 @@ export default function Home() {
               language={language}
             />
           </div>
+        )}
+
+        {/* Add to Compilation Dialog */}
+        {videos.length > 0 && (
+          <AddToCompilationDialog
+            open={showAddToCompilationDialog}
+            onOpenChange={setShowAddToCompilationDialog}
+            video={videos[currentVideoIndex]}
+            playlists={playlists}
+            onAddToCompilation={handleAddVideoToCompilations}
+            onCreateCompilation={handleCreateCompilationWithVideo}
+            language={language}
+          />
         )}
       </div>
     </main>

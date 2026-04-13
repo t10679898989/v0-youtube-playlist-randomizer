@@ -70,6 +70,20 @@ export const translations = {
     refreshPlaylist: "更新播放清單",
     playlistRefreshed: "播放清單已更新",
     playlistRefreshedDesc: "成功更新為 {count} 個影片",
+    
+    // Add to compilation
+    addToCompilation: "加入合輯",
+    selectCompilation: "選擇合輯",
+    addToExisting: "加入現有合輯",
+    createNewCompilation: "建立新合輯",
+    newCompilationName: "新合輯名稱",
+    addAndCreate: "建立並加入",
+    add: "加入",
+    videoAddedToCompilation: "已加入合輯",
+    videoAddedToCompilationDesc: "已將影片加入「{name}」",
+    compilationCreated: "合輯已建立",
+    compilationCreatedDesc: "已建立「{name}」並加入影片",
+    managePlaylist: "管理播放清單",
   },
   en: {
     title: "YouTube Random Player",
@@ -140,6 +154,20 @@ export const translations = {
     refreshPlaylist: "Refresh Playlist",
     playlistRefreshed: "Playlist Refreshed",
     playlistRefreshedDesc: "Successfully updated to {count} videos",
+    
+    // Add to compilation
+    addToCompilation: "Add to Compilation",
+    selectCompilation: "Select Compilation",
+    addToExisting: "Add to existing compilation",
+    createNewCompilation: "Create New Compilation",
+    newCompilationName: "New compilation name",
+    addAndCreate: "Create & Add",
+    add: "Add",
+    videoAddedToCompilation: "Added to Compilation",
+    videoAddedToCompilationDesc: "Video added to \"{name}\"",
+    compilationCreated: "Compilation Created",
+    compilationCreatedDesc: "Created \"{name}\" and added video",
+    managePlaylist: "Manage Playlists",
   },
   ja: {
     title: "YouTube ランダムプレーヤー",
@@ -210,9 +238,23 @@ export const translations = {
     refreshPlaylist: "プレイリストを更新",
     playlistRefreshed: "プレイリストを更新しました",
     playlistRefreshedDesc: "{count}個の動画に更新しました",
+    
+    // Add to compilation
+    addToCompilation: "コンピレーションに追加",
+    selectCompilation: "コンピレーションを選択",
+    addToExisting: "既存のコンピレーションに追加",
+    createNewCompilation: "新しいコンピレーションを作成",
+    newCompilationName: "新しいコンピレーション名",
+    addAndCreate: "作成して追加",
+    add: "追加",
+    videoAddedToCompilation: "コンピレーションに追加しました",
+    videoAddedToCompilationDesc: "「{name}」に動画を追加しました",
+    compilationCreated: "コンピレーションを作成しました",
+    compilationCreatedDesc: "「{name}」を作成し、動画を追加しました",
+    managePlaylist: "プレイリストを管理",
   },
 }
 
-export function useTranslation(language: Language) {
-  return translations[language]
+export function useTranslation(language: Language | string) {
+  return translations[language as Language] || translations["zh-TW"]
 }
