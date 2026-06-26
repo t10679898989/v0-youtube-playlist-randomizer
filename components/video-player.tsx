@@ -68,12 +68,14 @@ export function VideoPlayer({
   const playModeRef = useRef(playMode)
   const onVideoEndRef = useRef(onVideoEnd)
   const onNextRef = useRef(onNext)
+  const onPreviousRef = useRef(onPrevious)
   const hasUserInteractedRef = useRef(hasUserInteracted)
   const onUserInteractionRef = useRef(onUserInteraction)
 
   useEffect(() => { playModeRef.current = playMode }, [playMode])
   useEffect(() => { onVideoEndRef.current = onVideoEnd }, [onVideoEnd])
   useEffect(() => { onNextRef.current = onNext }, [onNext])
+  useEffect(() => { onPreviousRef.current = onPrevious }, [onPrevious])
   useEffect(() => { hasUserInteractedRef.current = hasUserInteracted }, [hasUserInteracted])
   useEffect(() => { onUserInteractionRef.current = onUserInteraction }, [onUserInteraction])
 
@@ -92,6 +94,26 @@ export function VideoPlayer({
     const iframe = containerRef.current?.querySelector("iframe") as HTMLIFrameElement | null
     if (iframe?.contentWindow) {
       iframe.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: "" }), "*")
+    }
+  }
+
+  // 更新系統媒體通知的播放狀態與進度，讓切到背景後通知能持續存在
+  const updateMediaSessionState = (state: "playing" | "paused") => {
+    if (!("mediaSession" in navigator)) return
+    try {
+      navigator.mediaSession.playbackState = state
+      const p = playerRef.current
+      const duration = p?.getDuration?.() || 0
+      const position = p?.getCurrentTime?.() || 0
+      if (duration > 0 && position <= duration) {
+        navigator.mediaSession.setPositionState?.({
+          duration,
+          position,
+          playbackRate: 1,
+        })
+      }
+    } catch (e) {
+      console.log("[v0] updateMediaSessionState failed:", e)
     }
   }
 
@@ -223,9 +245,11 @@ export function VideoPlayer({
                 onUserInteractionRef.current()
                 clearWatchdog()
                 startStallCheck()
+                updateMediaSessionState("playing")
               } else if (event.data === YT.PlayerState.PAUSED) {
                 setIsPlaying(false)
                 clearStallCheck()
+                updateMediaSessionState("paused")
               }
 
               if (event.data === YT.PlayerState.ENDED) {
@@ -297,9 +321,15 @@ export function VideoPlayer({
   useEffect(() => {
     if (!("mediaSession" in navigator)) return
 
-    navigator.mediaSession.setActionHandler("play", () => postToIframe("playVideo"))
-    navigator.mediaSession.setActionHandler("pause", () => postToIframe("pauseVideo"))
-    navigator.mediaSession.setActionHandler("previoustrack", () => onNextRef.current())
+    navigator.mediaSession.setActionHandler("play", () => {
+      postToIframe("playVideo")
+      updateMediaSessionState("playing")
+    })
+    navigator.mediaSession.setActionHandler("pause", () => {
+      postToIframe("pauseVideo")
+      updateMediaSessionState("paused")
+    })
+    navigator.mediaSession.setActionHandler("previoustrack", () => onPreviousRef.current())
     navigator.mediaSession.setActionHandler("nexttrack", () => onNextRef.current())
   }, [])
 
