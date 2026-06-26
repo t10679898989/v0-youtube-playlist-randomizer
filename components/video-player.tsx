@@ -254,13 +254,13 @@ export function VideoPlayer({
               } else if (event.data === YT.PlayerState.PAUSED) {
                 setIsPlaying(false)
                 clearStallCheck()
-                // 強制向系統宣示主權：當 YouTube 在背景自動觸發暫停（甚至回報 none）時，
-                // 把 playbackState 定格成 "playing"，不讓 Chrome 回收媒體控制卡片。
+                // 無聲音訊錨點保持播放（卡片不被回收），但把 playbackState 設為 "paused"，
+                // 讓卡片顯示「播放鈕」，反映 YouTube 的真實狀態。按下播放鈕即可恢復 YouTube。
                 if ("mediaSession" in navigator) {
                   try {
-                    navigator.mediaSession.playbackState = "playing"
+                    navigator.mediaSession.playbackState = "paused"
                   } catch (e) {
-                    console.log("[v0] force playbackState failed:", e)
+                    console.log("[v0] set playbackState paused failed:", e)
                   }
                 }
               }
@@ -337,7 +337,7 @@ export function VideoPlayer({
     navigator.mediaSession.setActionHandler("play", () => {
       // 確保無聲音訊錨點持續播放，維持媒體卡片
       silentAudioRef.current?.play().catch(() => {})
-      // 用 YouTube IFrame API 直接恢復播放（背景時比 postMessage 可靠），
+      // 用 YouTube IFrame API 直接恢復播放（背景時�� postMessage 可靠），
       // 並同時送出 postMessage 作為後備
       try {
         playerRef.current?.playVideo?.()
