@@ -249,7 +249,15 @@ export function VideoPlayer({
               } else if (event.data === YT.PlayerState.PAUSED) {
                 setIsPlaying(false)
                 clearStallCheck()
-                updateMediaSessionState("paused")
+                // 強制向系統宣示主權：當 YouTube 在背景自動觸發暫停（甚至回報 none）時，
+                // 把 playbackState 定格成 "playing"，不讓 Chrome 回收媒體控制卡片。
+                if ("mediaSession" in navigator) {
+                  try {
+                    navigator.mediaSession.playbackState = "playing"
+                  } catch (e) {
+                    console.log("[v0] force playbackState failed:", e)
+                  }
+                }
               }
 
               if (event.data === YT.PlayerState.ENDED) {
