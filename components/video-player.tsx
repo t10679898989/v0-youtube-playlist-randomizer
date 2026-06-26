@@ -62,6 +62,9 @@ export function VideoPlayer({
   const nextLockRef = useRef<number>(0)
   const stallCheckRef = useRef<number | null>(null)
   const lastTimeRef = useRef<number>(0)
+  // 無聲音訊錨點：在父頁面持續播放無聲音訊，讓瀏覽器認定頁面一直有媒體在播放，
+  // 避免切到背景、YouTube iframe 自動暫停時，系統把媒體控制卡片回收。
+  const silentAudioRef = useRef<HTMLAudioElement | null>(null)
   const t = useTranslation(language)
 
   // 用 ref 保存最新的回呼與狀態，讓 player 閉包永遠能讀到最新值
@@ -246,6 +249,8 @@ export function VideoPlayer({
                 clearWatchdog()
                 startStallCheck()
                 updateMediaSessionState("playing")
+                // 確保無聲音訊錨點持續播放，維持媒體卡片存在
+                silentAudioRef.current?.play().catch(() => {})
               } else if (event.data === YT.PlayerState.PAUSED) {
                 setIsPlaying(false)
                 clearStallCheck()
@@ -339,6 +344,76 @@ export function VideoPlayer({
     })
     navigator.mediaSession.setActionHandler("previoustrack", () => onPreviousRef.current())
     navigator.mediaSession.setActionHandler("nexttrack", () => onNextRef.current())
+  }, [])
+
+  // 建立無聲音訊錨點，並在使用者第一次與父頁面互動時開始循環播放
+  useEffect(() => {
+    // 用程式產生一段 1 秒的無聲 WAV（mono / 8kHz，約 8KB），避免額外檔案
+    const createSilentWavUrl = () => {
+      const sampleRate = 8000
+      const numSamples = sampleRate * 1
+      const buffer = new ArrayBuffer(44 + numSamples * 2)
+      const view = new DataView(buffer)
+      const writeStr = (offset: number, str: string) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i))
+      }
+      writeStr(0, "RIFF")
+      view.setUint32(4, 36 + numSamples * 2, true)
+      writeStr(8, "WAVE")
+      writeStr(12, "fmt ")
+      view.setUint32(16, 16, true)
+      view.setUint16(20, 1, true) // PCM
+      view.setUint16(22, 1, true) // mono
+      view.setUint32(24, sampleRate, true)
+      view.setUint32(28, sampleRate * 2, true)
+      view.setUint16(32, 2, true)
+      view.setUint16(34, 16, true)
+      writeStr(36, "data")
+      view.setUint32(40, numSamples * 2, true)
+      // 樣本預設為 0（無聲）
+      const blob = new Blob([buffer], { type: "audio/wav" })
+      return URL.createObjectURL(blob)
+    }
+
+    const audio = document.createElement("audio")
+    const url = createSilentWavUrl()
+    audio.src = url
+    audio.loop = true
+    audio.volume = 0
+    audio.setAttribute("playsinline", "")
+    silentAudioRef.current = audio
+
+    // 需要父頁面的使用者手勢才能播放音訊；監聽各種互動事件，成功後即解除監聽
+    const prime = () => {
+      audio
+        .play()
+        .then(() => {
+          console.log("[v0] silent audio anchor started")
+          document.removeEventListener("pointerdown", prime)
+          document.removeEventListener("click", prime)
+          document.removeEventListener("touchstart", prime)
+          document.removeEventListener("keydown", prime)
+        })
+        .catch(() => {
+          // 尚未取得手勢，保留監聽器等待下次互動
+        })
+    }
+
+    document.addEventListener("pointerdown", prime)
+    document.addEventListener("click", prime)
+    document.addEventListener("touchstart", prime)
+    document.addEventListener("keydown", prime)
+
+    return () => {
+      document.removeEventListener("pointerdown", prime)
+      document.removeEventListener("click", prime)
+      document.removeEventListener("touchstart", prime)
+      document.removeEventListener("keydown", prime)
+      audio.pause()
+      audio.src = ""
+      URL.revokeObjectURL(url)
+      silentAudioRef.current = null
+    }
   }, [])
 
   if (!video) return null
