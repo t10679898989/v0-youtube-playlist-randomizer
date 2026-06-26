@@ -348,10 +348,11 @@ export function VideoPlayer({
 
   // 建立無聲音訊錨點，並在使用者第一次與父頁面互動時開始循環播放
   useEffect(() => {
-    // 用程式產生一段 1 秒的無聲 WAV（mono / 8kHz，約 8KB），避免額外檔案
+    // 用程式產生一段 30 秒的無聲 WAV（mono / 8kHz）。
+    // 長度需足夠長，部分瀏覽器會忽略過短的音訊而不建立媒體工作階段。
     const createSilentWavUrl = () => {
       const sampleRate = 8000
-      const numSamples = sampleRate * 1
+      const numSamples = sampleRate * 30
       const buffer = new ArrayBuffer(44 + numSamples * 2)
       const view = new DataView(buffer)
       const writeStr = (offset: number, str: string) => {
@@ -379,7 +380,9 @@ export function VideoPlayer({
     const url = createSilentWavUrl()
     audio.src = url
     audio.loop = true
-    audio.volume = 0
+    // 內容本身是全零（聽不到聲音），但 volume 必須維持非 0，
+    // 否則 Chrome / Android 不會為它請求音訊焦點，媒體卡片就不會出現。
+    audio.volume = 1
     audio.setAttribute("playsinline", "")
     silentAudioRef.current = audio
 
