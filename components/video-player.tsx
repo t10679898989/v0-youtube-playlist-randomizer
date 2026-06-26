@@ -122,16 +122,21 @@ export function VideoPlayer({
 
   // 統一的播放控制：播放器 UI 按鈕與媒體卡片按鈕都呼叫同一組函式，確保兩者同步
   const playYouTube = () => {
-    // 確保無聲音訊錨點持續播放，維持媒體卡片存在
-    silentAudioRef.current?.play().catch(() => {})
+    const p = playerRef.current
+    console.log("[v0] playYouTube called, state before:", p?.getPlayerState?.())
+    // 先在使用者手勢的第一時間命令 YouTube 播放，避免手勢被其他呼叫用掉
     try {
-      playerRef.current?.playVideo?.()
+      p?.unMute?.()
+      p?.playVideo?.()
     } catch (e) {
       console.log("[v0] playVideo via API failed:", e)
     }
     postToIframe("playVideo")
+    // 背景時錨點已由 visibilitychange 啟動；前景不啟動錨點以免與 YouTube 搶焦點
+    if (document.hidden) silentAudioRef.current?.play().catch(() => {})
     setIsPlaying(true)
     updateMediaSessionState("playing")
+    console.log("[v0] playYouTube done, state after:", p?.getPlayerState?.())
   }
 
   const pauseYouTube = () => {
@@ -274,8 +279,8 @@ export function VideoPlayer({
                 clearWatchdog()
                 startStallCheck()
                 updateMediaSessionState("playing")
-                // 確保無聲音訊錨點持續播放，維持媒體卡片存在
-                silentAudioRef.current?.play().catch(() => {})
+                // 僅背景時維持錨點；前景交給 YouTube，避免搶音訊焦點
+                if (document.hidden) silentAudioRef.current?.play().catch(() => {})
               } else if (event.data === YT.PlayerState.PAUSED) {
                 setIsPlaying(false)
                 clearStallCheck()
@@ -407,12 +412,19 @@ export function VideoPlayer({
     audio.setAttribute("playsinline", "")
     silentAudioRef.current = audio
 
-    // 需要父頁面的使用者手勢才能播放音訊；監聽各種互動事件，成功後即解除監聽
+    let primed = false
+
+    // 第一次互動時 prime：取得音訊播放授權。
+    // 前景不需要錨點（交給 YouTube 播放，避免搶音訊焦點導致無法恢復），
+    // 僅在背景時才讓錨點播放以維持媒體卡片。
     const prime = () => {
       audio
         .play()
         .then(() => {
-          console.log("[v0] silent audio anchor started")
+          primed = true
+          console.log("[v0] silent audio anchor primed")
+          // 前景時立即暫停錨點，避免與 YouTube 搶焦點
+          if (!document.hidden) audio.pause()
           document.removeEventListener("pointerdown", prime)
           document.removeEventListener("click", prime)
           document.removeEventListener("touchstart", prime)
@@ -423,16 +435,30 @@ export function VideoPlayer({
         })
     }
 
+    // 切到背景：啟動錨點維持卡片；回到前景：暫停錨點，把音訊焦點還給 YouTube
+    const handleVisibility = () => {
+      if (!primed) return
+      if (document.hidden) {
+        audio.play().catch(() => {})
+        console.log("[v0] background - silent anchor playing")
+      } else {
+        audio.pause()
+        console.log("[v0] foreground - silent anchor paused")
+      }
+    }
+
     document.addEventListener("pointerdown", prime)
     document.addEventListener("click", prime)
     document.addEventListener("touchstart", prime)
     document.addEventListener("keydown", prime)
+    document.addEventListener("visibilitychange", handleVisibility)
 
     return () => {
       document.removeEventListener("pointerdown", prime)
       document.removeEventListener("click", prime)
       document.removeEventListener("touchstart", prime)
       document.removeEventListener("keydown", prime)
+      document.removeEventListener("visibilitychange", handleVisibility)
       audio.pause()
       audio.src = ""
       URL.revokeObjectURL(url)
