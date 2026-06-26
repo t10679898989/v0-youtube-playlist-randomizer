@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { SkipBack, SkipForward, Repeat1, Repeat, Plus, Play, Pause } from "lucide-react"
+import { SkipBack, SkipForward, Repeat1, Repeat, Plus } from "lucide-react"
 import type { Video, SortMode, PlayerSettings, PlayMode } from "@/app/page"
 import { SortSelector } from "@/components/sort-selector"
 import { useTranslation } from "@/lib/translations"
@@ -62,23 +62,18 @@ export function VideoPlayer({
   const nextLockRef = useRef<number>(0)
   const stallCheckRef = useRef<number | null>(null)
   const lastTimeRef = useRef<number>(0)
-  // 無聲音訊錨點：在父頁面持續播放無聲音訊，讓瀏覽器認定頁面一直有媒體在播放，
-  // 避免切到背景、YouTube iframe 自動暫停時，系統把媒體控制卡片回收。
-  const silentAudioRef = useRef<HTMLAudioElement | null>(null)
   const t = useTranslation(language)
 
   // 用 ref 保存最新的回呼與狀態，讓 player 閉包永遠能讀到最新值
   const playModeRef = useRef(playMode)
   const onVideoEndRef = useRef(onVideoEnd)
   const onNextRef = useRef(onNext)
-  const onPreviousRef = useRef(onPrevious)
   const hasUserInteractedRef = useRef(hasUserInteracted)
   const onUserInteractionRef = useRef(onUserInteraction)
 
   useEffect(() => { playModeRef.current = playMode }, [playMode])
   useEffect(() => { onVideoEndRef.current = onVideoEnd }, [onVideoEnd])
   useEffect(() => { onNextRef.current = onNext }, [onNext])
-  useEffect(() => { onPreviousRef.current = onPrevious }, [onPrevious])
   useEffect(() => { hasUserInteractedRef.current = hasUserInteracted }, [hasUserInteracted])
   useEffect(() => { onUserInteractionRef.current = onUserInteraction }, [onUserInteraction])
 
@@ -100,62 +95,12 @@ export function VideoPlayer({
     }
   }
 
-  // 更新系統媒體通知的播放狀態與進度，讓切到背景後通知能持續存在
-  const updateMediaSessionState = (state: "playing" | "paused") => {
-    if (!("mediaSession" in navigator)) return
-    try {
-      navigator.mediaSession.playbackState = state
-      const p = playerRef.current
-      const duration = p?.getDuration?.() || 0
-      const position = p?.getCurrentTime?.() || 0
-      if (duration > 0 && position <= duration) {
-        navigator.mediaSession.setPositionState?.({
-          duration,
-          position,
-          playbackRate: 1,
-        })
-      }
-    } catch (e) {
-      console.log("[v0] updateMediaSessionState failed:", e)
-    }
-  }
-
-  // 統一的播放控制：播放器 UI 按鈕與媒體卡片按鈕都呼叫同一組函式，確保兩者同步
-  const playYouTube = () => {
-    const p = playerRef.current
-    console.log("[v0] playYouTube called, state before:", p?.getPlayerState?.())
-    // 先在使用者手勢的第一時間命令 YouTube 播放，避免手勢被其他呼叫用掉
-    try {
-      p?.unMute?.()
-      p?.playVideo?.()
-    } catch (e) {
-      console.log("[v0] playVideo via API failed:", e)
-    }
-    postToIframe("playVideo")
-    // 背景時錨點已由 visibilitychange 啟動；前景不啟動錨點以免與 YouTube 搶焦點
-    if (document.hidden) silentAudioRef.current?.play().catch(() => {})
-    setIsPlaying(true)
-    updateMediaSessionState("playing")
-    console.log("[v0] playYouTube done, state after:", p?.getPlayerState?.())
-  }
-
-  const pauseYouTube = () => {
-    try {
-      playerRef.current?.pauseVideo?.()
-    } catch (e) {
-      console.log("[v0] pauseVideo via API failed:", e)
-    }
-    postToIframe("pauseVideo")
-    setIsPlaying(false)
-    updateMediaSessionState("paused")
-  }
-
   const togglePlayPause = () => {
     const YT = window.YT
     const state = playerRef.current?.getPlayerState?.()
     const playing = (YT && (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING)) || isPlaying
-    if (playing) pauseYouTube()
-    else playYouTube()
+    if (playing) postToIframe("pauseVideo")
+    else postToIframe("playVideo")
   }
 
   const watchdogRecoveryRef = useRef<number | null>(null)
@@ -278,21 +223,9 @@ export function VideoPlayer({
                 onUserInteractionRef.current()
                 clearWatchdog()
                 startStallCheck()
-                updateMediaSessionState("playing")
-                // 僅背景時維持錨點；前景交給 YouTube，避免搶音訊焦點
-                if (document.hidden) silentAudioRef.current?.play().catch(() => {})
               } else if (event.data === YT.PlayerState.PAUSED) {
                 setIsPlaying(false)
                 clearStallCheck()
-                // 無聲音訊錨點保持播放（卡片不被回收），但把 playbackState 設為 "paused"，
-                // 讓卡片顯示「播放鈕」，反映 YouTube 的真實狀態。按下播放鈕即可恢復 YouTube。
-                if ("mediaSession" in navigator) {
-                  try {
-                    navigator.mediaSession.playbackState = "paused"
-                  } catch (e) {
-                    console.log("[v0] set playbackState paused failed:", e)
-                  }
-                }
               }
 
               if (event.data === YT.PlayerState.ENDED) {
@@ -364,106 +297,10 @@ export function VideoPlayer({
   useEffect(() => {
     if (!("mediaSession" in navigator)) return
 
-    // 媒體卡片的播放/暫停按鈕，與播放器 UI 按鈕走同一組統一函式
-    navigator.mediaSession.setActionHandler("play", () => playYouTube())
-    navigator.mediaSession.setActionHandler("pause", () => pauseYouTube())
-    navigator.mediaSession.setActionHandler("previoustrack", () => onPreviousRef.current())
+    navigator.mediaSession.setActionHandler("play", () => postToIframe("playVideo"))
+    navigator.mediaSession.setActionHandler("pause", () => postToIframe("pauseVideo"))
+    navigator.mediaSession.setActionHandler("previoustrack", () => onNextRef.current())
     navigator.mediaSession.setActionHandler("nexttrack", () => onNextRef.current())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // 建立無聲音訊錨點，並在使用者第一次與父頁面互動時開始循環播放
-  useEffect(() => {
-    // 用程式產生一段 30 秒的無聲 WAV（mono / 8kHz）。
-    // 長度需足夠長，部分瀏覽器會忽略過短的音訊而不建立媒體工作階段。
-    const createSilentWavUrl = () => {
-      const sampleRate = 8000
-      const numSamples = sampleRate * 30
-      const buffer = new ArrayBuffer(44 + numSamples * 2)
-      const view = new DataView(buffer)
-      const writeStr = (offset: number, str: string) => {
-        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i))
-      }
-      writeStr(0, "RIFF")
-      view.setUint32(4, 36 + numSamples * 2, true)
-      writeStr(8, "WAVE")
-      writeStr(12, "fmt ")
-      view.setUint32(16, 16, true)
-      view.setUint16(20, 1, true) // PCM
-      view.setUint16(22, 1, true) // mono
-      view.setUint32(24, sampleRate, true)
-      view.setUint32(28, sampleRate * 2, true)
-      view.setUint16(32, 2, true)
-      view.setUint16(34, 16, true)
-      writeStr(36, "data")
-      view.setUint32(40, numSamples * 2, true)
-      // 樣本預設為 0（無聲）
-      const blob = new Blob([buffer], { type: "audio/wav" })
-      return URL.createObjectURL(blob)
-    }
-
-    const audio = document.createElement("audio")
-    const url = createSilentWavUrl()
-    audio.src = url
-    audio.loop = true
-    // 內容本身是全零（聽不到聲音），但 volume 必須維持非 0，
-    // 否則 Chrome / Android 不會為它請求音訊焦點，媒體卡片就不會出現。
-    audio.volume = 1
-    audio.setAttribute("playsinline", "")
-    silentAudioRef.current = audio
-
-    let primed = false
-
-    // 第一次互動時 prime：取得音訊播放授權。
-    // 前景不需要錨點（交給 YouTube 播放，避免搶音訊焦點導致無法恢復），
-    // 僅在背景時才讓錨點播放以維持媒體卡片。
-    const prime = () => {
-      audio
-        .play()
-        .then(() => {
-          primed = true
-          console.log("[v0] silent audio anchor primed")
-          // 前景時立即暫停錨點，避免與 YouTube 搶焦點
-          if (!document.hidden) audio.pause()
-          document.removeEventListener("pointerdown", prime)
-          document.removeEventListener("click", prime)
-          document.removeEventListener("touchstart", prime)
-          document.removeEventListener("keydown", prime)
-        })
-        .catch(() => {
-          // 尚未取得手勢，保留監聽器等待下次互動
-        })
-    }
-
-    // 切到背景：啟動錨點維持卡片；回到前景：暫停錨點，把音訊焦點還給 YouTube
-    const handleVisibility = () => {
-      if (!primed) return
-      if (document.hidden) {
-        audio.play().catch(() => {})
-        console.log("[v0] background - silent anchor playing")
-      } else {
-        audio.pause()
-        console.log("[v0] foreground - silent anchor paused")
-      }
-    }
-
-    document.addEventListener("pointerdown", prime)
-    document.addEventListener("click", prime)
-    document.addEventListener("touchstart", prime)
-    document.addEventListener("keydown", prime)
-    document.addEventListener("visibilitychange", handleVisibility)
-
-    return () => {
-      document.removeEventListener("pointerdown", prime)
-      document.removeEventListener("click", prime)
-      document.removeEventListener("touchstart", prime)
-      document.removeEventListener("keydown", prime)
-      document.removeEventListener("visibilitychange", handleVisibility)
-      audio.pause()
-      audio.src = ""
-      URL.revokeObjectURL(url)
-      silentAudioRef.current = null
-    }
   }, [])
 
   if (!video) return null
@@ -511,16 +348,6 @@ export function VideoPlayer({
               title={t.previous}
             >
               <SkipBack className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="default"
-              size="icon"
-              onClick={togglePlayPause}
-              className="h-8 w-8"
-              title={isPlaying ? t.playSingleLoop : t.playNormal}
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </Button>
             <Button
               variant="outline"
