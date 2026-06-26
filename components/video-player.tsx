@@ -335,10 +335,24 @@ export function VideoPlayer({
     if (!("mediaSession" in navigator)) return
 
     navigator.mediaSession.setActionHandler("play", () => {
+      // 確保無聲音訊錨點持續播放，維持媒體卡片
+      silentAudioRef.current?.play().catch(() => {})
+      // 用 YouTube IFrame API 直接恢復播放（背景時比 postMessage 可靠），
+      // 並同時送出 postMessage 作為後備
+      try {
+        playerRef.current?.playVideo?.()
+      } catch (e) {
+        console.log("[v0] playVideo via API failed:", e)
+      }
       postToIframe("playVideo")
       updateMediaSessionState("playing")
     })
     navigator.mediaSession.setActionHandler("pause", () => {
+      try {
+        playerRef.current?.pauseVideo?.()
+      } catch (e) {
+        console.log("[v0] pauseVideo via API failed:", e)
+      }
       postToIframe("pauseVideo")
       updateMediaSessionState("paused")
     })
