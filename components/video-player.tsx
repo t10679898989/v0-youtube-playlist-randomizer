@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { SkipBack, SkipForward, Repeat1, Repeat, Plus } from "lucide-react"
+import { SkipBack, SkipForward, Repeat1, Repeat, Plus, Play, Pause } from "lucide-react"
 import type { Video, SortMode, PlayerSettings, PlayMode } from "@/app/page"
 import { SortSelector } from "@/components/sort-selector"
 import { useTranslation } from "@/lib/translations"
@@ -120,12 +120,37 @@ export function VideoPlayer({
     }
   }
 
+  // 統一的播放控制：播放器 UI 按鈕與媒體卡片按鈕都呼叫同一組函式，確保兩者同步
+  const playYouTube = () => {
+    // 確保無聲音訊錨點持續播放，維持媒體卡片存在
+    silentAudioRef.current?.play().catch(() => {})
+    try {
+      playerRef.current?.playVideo?.()
+    } catch (e) {
+      console.log("[v0] playVideo via API failed:", e)
+    }
+    postToIframe("playVideo")
+    setIsPlaying(true)
+    updateMediaSessionState("playing")
+  }
+
+  const pauseYouTube = () => {
+    try {
+      playerRef.current?.pauseVideo?.()
+    } catch (e) {
+      console.log("[v0] pauseVideo via API failed:", e)
+    }
+    postToIframe("pauseVideo")
+    setIsPlaying(false)
+    updateMediaSessionState("paused")
+  }
+
   const togglePlayPause = () => {
     const YT = window.YT
     const state = playerRef.current?.getPlayerState?.()
     const playing = (YT && (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING)) || isPlaying
-    if (playing) postToIframe("pauseVideo")
-    else postToIframe("playVideo")
+    if (playing) pauseYouTube()
+    else playYouTube()
   }
 
   const watchdogRecoveryRef = useRef<number | null>(null)
@@ -334,30 +359,12 @@ export function VideoPlayer({
   useEffect(() => {
     if (!("mediaSession" in navigator)) return
 
-    navigator.mediaSession.setActionHandler("play", () => {
-      // 確保無聲音訊錨點持續播放，維持媒體卡片
-      silentAudioRef.current?.play().catch(() => {})
-      // 用 YouTube IFrame API 直接恢復播放（背景時�� postMessage 可靠），
-      // 並同時送出 postMessage 作為後備
-      try {
-        playerRef.current?.playVideo?.()
-      } catch (e) {
-        console.log("[v0] playVideo via API failed:", e)
-      }
-      postToIframe("playVideo")
-      updateMediaSessionState("playing")
-    })
-    navigator.mediaSession.setActionHandler("pause", () => {
-      try {
-        playerRef.current?.pauseVideo?.()
-      } catch (e) {
-        console.log("[v0] pauseVideo via API failed:", e)
-      }
-      postToIframe("pauseVideo")
-      updateMediaSessionState("paused")
-    })
+    // 媒體卡片的播放/暫停按鈕，與播放器 UI 按鈕走同一組統一函式
+    navigator.mediaSession.setActionHandler("play", () => playYouTube())
+    navigator.mediaSession.setActionHandler("pause", () => pauseYouTube())
     navigator.mediaSession.setActionHandler("previoustrack", () => onPreviousRef.current())
     navigator.mediaSession.setActionHandler("nexttrack", () => onNextRef.current())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // 建立無聲音訊錨點，並在使用者第一次與父頁面互動時開始循環播放
@@ -478,6 +485,16 @@ export function VideoPlayer({
               title={t.previous}
             >
               <SkipBack className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="default"
+              size="icon"
+              onClick={togglePlayPause}
+              className="h-8 w-8"
+              title={isPlaying ? t.playSingleLoop : t.playNormal}
+              aria-label={isPlaying ? "Pause" : "Play"}
+            >
+              {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </Button>
             <Button
               variant="outline"
