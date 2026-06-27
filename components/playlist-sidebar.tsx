@@ -15,13 +15,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -264,26 +257,46 @@ export function PlaylistSidebar({
   )
 
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen} modal={false}>
-      <SheetTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2 bg-background/80 backdrop-blur-sm">
-          <Menu className="h-4 w-4" />
-          <span className="hidden sm:inline">{t.managePlaylist}</span>
-        </Button>
-      </SheetTrigger>
-      <SheetContent
-        side="left"
-        className="w-80 p-0"
-        onOpenAutoFocus={(e) => e.preventDefault()}
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-2 bg-background/80 backdrop-blur-sm"
+        onClick={() => setIsOpen(true)}
       >
-        <SheetHeader className="p-4 border-b border-border/50">
-          <SheetTitle className="flex items-center gap-2">
+        <Menu className="h-4 w-4" />
+        <span className="hidden sm:inline">{t.managePlaylist}</span>
+      </Button>
+
+      {/* 自製抽屜：不使用 Radix Sheet 的焦點鎖定與捲動鎖定，
+          避免手機鍵盤每打一字就被收起 */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50"
+          onClick={() => setIsOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <div
+        role="dialog"
+        aria-label={t.myPlaylists}
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85%] flex-col bg-background shadow-lg transition-transform duration-300 ease-in-out",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-border/50">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
             <List className="h-5 w-5" />
             {t.myPlaylists}
-          </SheetTitle>
-        </SheetHeader>
+          </h2>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsOpen(false)}>
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </Button>
+        </div>
         {sidebarContent}
-      </SheetContent>
-    </Sheet>
+      </div>
+    </>
   )
 }
