@@ -77,7 +77,7 @@ export function PlaylistSidebar({
     }
   }
 
-  const SidebarContent = () => (
+  const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Add Playlist Form */}
       <div className="p-4 border-b border-border/50">
@@ -248,7 +248,7 @@ export function PlaylistSidebar({
             {t.myPlaylists}
           </SheetTitle>
         </SheetHeader>
-        <SidebarContent />
+        {sidebarContent}
       </SheetContent>
     </Sheet>
   )
