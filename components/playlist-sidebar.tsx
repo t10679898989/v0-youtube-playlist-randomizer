@@ -15,74 +15,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useTranslation } from "@/lib/translations"
-
-// 獨立的新增表單，state 自我管理，避免每次打字觸發整個側邊欄（Sheet）重新渲染
-// 進而導致手機鍵盤失去焦點、無法連續輸入
-function AddPlaylistForm({
-  onSubmit,
-  isLoading,
-  urlPlaceholder,
-  namePlaceholder,
-  loadingLabel,
-  addLabel,
-}: {
-  onSubmit: (id: string, name?: string) => void
-  isLoading: boolean
-  urlPlaceholder: string
-  namePlaceholder: string
-  loadingLabel: string
-  addLabel: string
-}) {
-  const [input, setInput] = useState("")
-  const [playlistName, setPlaylistName] = useState("")
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (input.trim()) {
-      onSubmit(input.trim(), playlistName.trim() || undefined)
-      setInput("")
-      setPlaylistName("")
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <Input
-        type="text"
-        placeholder={urlPlaceholder}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        className="w-full text-sm"
-        disabled={isLoading}
-      />
-      <Input
-        type="text"
-        placeholder={namePlaceholder}
-        value={playlistName}
-        onChange={(e) => setPlaylistName(e.target.value)}
-        className="w-full text-sm"
-        disabled={isLoading}
-      />
-      <Button type="submit" disabled={isLoading || !input.trim()} className="w-full" size="sm">
-        {isLoading ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {loadingLabel}
-          </>
-        ) : (
-          <>
-            <Plus className="mr-2 h-4 w-4" />
-            {addLabel}
-          </>
-        )}
-      </Button>
-    </form>
-  )
-}
 
 interface PlaylistSidebarProps {
   playlists: Playlist[]
@@ -107,12 +50,23 @@ export function PlaylistSidebar({
   isLoading,
   language,
 }: PlaylistSidebarProps) {
+  const [input, setInput] = useState("")
+  const [playlistName, setPlaylistName] = useState("")
   const [showCompilationDialog, setShowCompilationDialog] = useState(false)
   const [selectedPlaylists, setSelectedPlaylists] = useState<string[]>([])
   const [compilationName, setCompilationName] = useState("")
   const [isOpen, setIsOpen] = useState(false)
 
   const t = useTranslation(language)
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (input.trim()) {
+      onPlaylistLoad(input.trim(), playlistName.trim() || undefined)
+      setInput("")
+      setPlaylistName("")
+    }
+  }
 
   const handleCreateCompilation = () => {
     if (selectedPlaylists.length > 0 && compilationName.trim()) {
@@ -123,18 +77,41 @@ export function PlaylistSidebar({
     }
   }
 
-  const sidebarContent = (
+  const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Add Playlist Form */}
       <div className="p-4 border-b border-border/50">
-        <AddPlaylistForm
-          onSubmit={onPlaylistLoad}
-          isLoading={isLoading}
-          urlPlaceholder={t.playlistUrlPlaceholder}
-          namePlaceholder={t.playlistNamePlaceholder}
-          loadingLabel={t.loading}
-          addLabel={t.addPlaylist}
-        />
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <Input
+            type="text"
+            placeholder={t.playlistUrlPlaceholder}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className="w-full text-sm"
+            disabled={isLoading}
+          />
+          <Input
+            type="text"
+            placeholder={t.playlistNamePlaceholder}
+            value={playlistName}
+            onChange={(e) => setPlaylistName(e.target.value)}
+            className="w-full text-sm"
+            disabled={isLoading}
+          />
+          <Button type="submit" disabled={isLoading || !input.trim()} className="w-full" size="sm">
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {t.loading}
+              </>
+            ) : (
+              <>
+                <Plus className="mr-2 h-4 w-4" />
+                {t.addPlaylist}
+              </>
+            )}
+          </Button>
+        </form>
       </div>
 
       {/* Playlists List */}
@@ -257,46 +234,22 @@ export function PlaylistSidebar({
   )
 
   return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-2 bg-background/80 backdrop-blur-sm"
-        onClick={() => setIsOpen(true)}
-      >
-        <Menu className="h-4 w-4" />
-        <span className="hidden sm:inline">{t.managePlaylist}</span>
-      </Button>
-
-      {/* 自製抽屜：不使用 Radix Sheet 的焦點鎖定與捲動鎖定，
-          避免手機鍵盤每打一字就被收起 */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/50"
-          onClick={() => setIsOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-      <div
-        role="dialog"
-        aria-label={t.myPlaylists}
-        className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85%] flex-col bg-background shadow-lg transition-transform duration-300 ease-in-out",
-          isOpen ? "translate-x-0" : "-translate-x-full",
-        )}
-      >
-        <div className="flex items-center justify-between p-4 border-b border-border/50">
-          <h2 className="flex items-center gap-2 text-lg font-semibold">
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      <SheetTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2 bg-background/80 backdrop-blur-sm">
+          <Menu className="h-4 w-4" />
+          <span className="hidden sm:inline">{t.managePlaylist}</span>
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" className="w-80 p-0">
+        <SheetHeader className="p-4 border-b border-border/50">
+          <SheetTitle className="flex items-center gap-2">
             <List className="h-5 w-5" />
             {t.myPlaylists}
-          </h2>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsOpen(false)}>
-            <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-          </Button>
-        </div>
-        {sidebarContent}
-      </div>
-    </>
+          </SheetTitle>
+        </SheetHeader>
+        <SidebarContent />
+      </SheetContent>
+    </Sheet>
   )
 }
