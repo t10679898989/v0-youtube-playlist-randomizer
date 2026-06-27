@@ -264,14 +264,18 @@ export function PlaylistSidebar({
   )
 
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+    <Sheet open={isOpen} onOpenChange={setIsOpen} modal={false}>
       <SheetTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2 bg-background/80 backdrop-blur-sm">
           <Menu className="h-4 w-4" />
           <span className="hidden sm:inline">{t.managePlaylist}</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-80 p-0">
+      <SheetContent
+        side="left"
+        className="w-80 p-0"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <SheetHeader className="p-4 border-b border-border/50">
           <SheetTitle className="flex items-center gap-2">
             <List className="h-5 w-5" />
