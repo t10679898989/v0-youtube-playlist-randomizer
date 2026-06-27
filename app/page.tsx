@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { PlaylistManager } from "@/components/playlist-manager"
 import { PlaylistSidebar } from "@/components/playlist-sidebar"
 import { VideoPlayer } from "@/components/video-player"
@@ -37,6 +37,100 @@ export type PlayerSettings = {
   backgroundPlay: boolean
 }
 
+// 每個播放清單各自保存的狀態：排序方式、排列順序（以 videoId 陣列表示）、播放到第幾首
+export type PerPlaylistState = {
+  sortMode: SortMode
+  order: string[]
+  index: number
+  videoId: string | null
+}
+
+// 單一狀態檔內容（龐大的影片資料另存於 youtube-playlists）
+type StoredPlayerState = {
+  currentPlaylistId: string | null
+  byPlaylist: Record<string, PerPlaylistState>
+  settings: PlayerSettings
+  playMode: PlayMode
+  theme: ThemeMode
+  language: string
+}
+
+const PLAYER_STATE_KEY = "youtube-player-state"
+const PLAYLISTS_KEY = "youtube-playlists"
+
+// 依照已保存的排列順序（videoId 陣列）重建影片清單
+// 已不存在的影片會被略過，清單更新後新增的影片則接在後面
+function buildOrderedVideos(playlistVideos: Video[], order?: string[]): Video[] {
+  if (!order || order.length === 0) return playlistVideos
+  const map = new Map(playlistVideos.map((v) => [v.videoId, v]))
+  const ordered = order.map((id) => map.get(id)).filter((v): v is Video => Boolean(v))
+  const seen = new Set(order)
+  const extras = playlistVideos.filter((v) => !seen.has(v.videoId))
+  return [...ordered, ...extras]
+}
+
+// 把舊版分散的 localStorage 鍵遷移成新的單一狀態檔，遷移後清除舊鍵
+function migrateLegacyState(): StoredPlayerState | null {
+  if (typeof window === "undefined") return null
+
+  const curId = localStorage.getItem("youtube-current-playlist")
+  const rawSorted = localStorage.getItem("youtube-sorted-videos")
+  const rawIndex = localStorage.getItem("youtube-video-index")
+  const videoId = localStorage.getItem("youtube-current-video-id")
+  const sortMode = localStorage.getItem("youtube-sort-mode")
+  const rawSettings = localStorage.getItem("youtube-settings")
+  const playMode = localStorage.getItem("youtube-play-mode")
+  const theme = localStorage.getItem("youtube-theme")
+  const language = localStorage.getItem("youtube-language")
+
+  if (!curId && !rawSettings && !playMode && !theme && !language) {
+    return null
+  }
+
+  const byPlaylist: Record<string, PerPlaylistState> = {}
+  if (curId) {
+    let order: string[] = []
+    if (rawSorted) {
+      try {
+        order = (JSON.parse(rawSorted) as Video[]).map((v) => v.videoId)
+      } catch {
+        order = []
+      }
+    }
+    byPlaylist[curId] = {
+      sortMode: (sortMode as SortMode) || "original",
+      order,
+      index: rawIndex ? Number.parseInt(rawIndex) : 0,
+      videoId: videoId || null,
+    }
+  }
+
+  const state: StoredPlayerState = {
+    currentPlaylistId: curId || null,
+    byPlaylist,
+    settings: rawSettings
+      ? JSON.parse(rawSettings)
+      : { defaultQuality: "hd720", autoplay: true, backgroundPlay: false },
+    playMode: (playMode as PlayMode) || "normal",
+    theme: (theme as ThemeMode) || "dark",
+    language: language || "zh-TW",
+  }
+
+  ;[
+    "youtube-current-playlist",
+    "youtube-sorted-videos",
+    "youtube-video-index",
+    "youtube-current-video-id",
+    "youtube-sort-mode",
+    "youtube-settings",
+    "youtube-play-mode",
+    "youtube-theme",
+    "youtube-language",
+  ].forEach((k) => localStorage.removeItem(k))
+
+  return state
+}
+
 export default function Home() {
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [currentPlaylistId, setCurrentPlaylistId] = useState<string | null>(null)
@@ -57,127 +151,125 @@ export default function Home() {
   const [showAddToCompilationDialog, setShowAddToCompilationDialog] = useState(false)
   const { toast } = useToast()
 
+  // 每個播放清單各自的狀態（排序方式 / 排列順序 / 播放位置），跨清單切換時保留
+  const byPlaylistRef = useRef<Record<string, PerPlaylistState>>({})
+  const [isHydrated, setIsHydrated] = useState(false)
+
   const t = useTranslation(language)
 
+  // 還原狀態：每個播放清單各自記住排序方式、排列順序與播放到第幾首
+  // 注意：hasUserInteracted 故意不還原，每次開啟都從 false 開始，
+  // 避免 Watchdog 誤判已互動而在預載時跳歌
   useEffect(() => {
-    const savedPlaylists = localStorage.getItem("youtube-playlists")
-    const savedCurrentPlaylist = localStorage.getItem("youtube-current-playlist")
-    const savedVideoId = localStorage.getItem("youtube-current-video-id")
-    const savedVideoIndex = localStorage.getItem("youtube-video-index")
-    const savedSettings = localStorage.getItem("youtube-settings")
-    const savedPlayMode = localStorage.getItem("youtube-play-mode")
-    const savedTheme = localStorage.getItem("youtube-theme")
-    const savedLanguage = localStorage.getItem("youtube-language")
-    const savedSortMode = localStorage.getItem("youtube-sort-mode")
-    const savedSortedVideos = localStorage.getItem("youtube-sorted-videos")
-    // 注意：hasUserInteracted 故意不從 localStorage 讀回
-    // 每次開啟網頁都從 false 開始，避免 Watchdog 誤判已互動而在預載時跳歌
+    let parsedPlaylists: Playlist[] = []
+    const rawPlaylists = localStorage.getItem(PLAYLISTS_KEY)
+    if (rawPlaylists) {
+      try {
+        parsedPlaylists = JSON.parse(rawPlaylists)
+      } catch {
+        parsedPlaylists = []
+      }
+    }
 
-    if (savedPlaylists) {
-      const parsedPlaylists = JSON.parse(savedPlaylists)
+    // 讀取新的單一狀態檔；若不存在則嘗試從舊版分散的鍵遷移
+    let state: StoredPlayerState | null = null
+    const rawState = localStorage.getItem(PLAYER_STATE_KEY)
+    if (rawState) {
+      try {
+        state = JSON.parse(rawState)
+      } catch {
+        state = null
+      }
+    }
+    if (!state) {
+      state = migrateLegacyState()
+    }
+
+    if (parsedPlaylists.length > 0) {
       setPlaylists(parsedPlaylists)
+    }
 
-      if (savedCurrentPlaylist) {
-        const playlist = parsedPlaylists.find((p: Playlist) => p.id === savedCurrentPlaylist)
+    if (state) {
+      if (state.settings) setSettings(state.settings)
+      if (state.playMode) setPlayMode(state.playMode)
+      if (state.theme) setTheme(state.theme)
+      if (state.language) setLanguage(state.language)
+      byPlaylistRef.current = state.byPlaylist || {}
+
+      const curId = state.currentPlaylistId
+      if (curId) {
+        const playlist = parsedPlaylists.find((p) => p.id === curId)
         if (playlist) {
-          setCurrentPlaylistId(playlist.id)
-          setOriginalVideos(playlist.videos)
+          const saved = byPlaylistRef.current[curId]
+          const ordered = buildOrderedVideos(playlist.videos, saved?.order)
 
-          let restoredVideos: Video[] = playlist.videos
           let restoredIndex = 0
-
-          if (savedSortedVideos) {
-            try {
-              const parsedSortedVideos = JSON.parse(savedSortedVideos)
-              if (parsedSortedVideos.length === playlist.videos.length) {
-                restoredVideos = parsedSortedVideos
-              }
-            } catch (e) {
-              console.warn("[v0] Failed to parse sorted videos, using original order")
-            }
-          }
-
-          if (savedVideoId) {
-            const foundIndex = restoredVideos.findIndex((v: Video) => v.videoId === savedVideoId)
+          if (saved?.videoId) {
+            const foundIndex = ordered.findIndex((v) => v.videoId === saved.videoId)
             if (foundIndex !== -1) {
               restoredIndex = foundIndex
-            } else if (savedVideoIndex) {
-              restoredIndex = Math.min(Number.parseInt(savedVideoIndex), restoredVideos.length - 1)
+            } else if (typeof saved.index === "number") {
+              restoredIndex = Math.min(saved.index, ordered.length - 1)
             }
-          } else if (savedVideoIndex) {
-            restoredIndex = Math.min(Number.parseInt(savedVideoIndex), restoredVideos.length - 1)
+          } else if (saved && typeof saved.index === "number") {
+            restoredIndex = Math.min(saved.index, ordered.length - 1)
           }
 
-          setVideos(restoredVideos)
-          setCurrentVideoIndex(restoredIndex)
+          setCurrentPlaylistId(playlist.id)
+          setOriginalVideos(playlist.videos)
+          setVideos(ordered)
+          setCurrentVideoIndex(Math.max(0, restoredIndex))
+          if (saved?.sortMode) setSortMode(saved.sortMode)
         }
       }
     }
 
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings))
-    }
-
-    if (savedPlayMode) {
-      setPlayMode(savedPlayMode as PlayMode)
-    }
-
-    if (savedTheme) {
-      setTheme(savedTheme as ThemeMode)
-    }
-
-    if (savedLanguage) {
-      setLanguage(savedLanguage as string)
-    }
-
-    if (savedSortMode) {
-      setSortMode(savedSortMode as SortMode)
-    }
+    setIsHydrated(true)
   }, [])
 
-  useEffect(() => {
-    if (playlists.length > 0) {
-      localStorage.setItem("youtube-playlists", JSON.stringify(playlists))
-    } else {
-      localStorage.removeItem("youtube-playlists")
-      localStorage.removeItem("youtube-current-playlist")
-      localStorage.removeItem("youtube-sorted-videos")
-      localStorage.removeItem("youtube-current-video-id")
-    }
-  }, [playlists])
-
-  useEffect(() => {
-    if (currentPlaylistId) {
-      localStorage.setItem("youtube-current-playlist", currentPlaylistId)
-    }
-  }, [currentPlaylistId])
-
-  useEffect(() => {
-    localStorage.setItem("youtube-video-index", currentVideoIndex.toString())
-  }, [currentVideoIndex])
-
-  useEffect(() => {
-    if (videos.length > 0 && videos[currentVideoIndex]) {
-      localStorage.setItem("youtube-current-video-id", videos[currentVideoIndex].videoId)
-    }
-  }, [currentVideoIndex, videos])
-
+  // 套用主題的 class（持久化交由統一儲存處理）
   useEffect(() => {
     const root = document.documentElement
     root.classList.remove("light", "dark", "thumbnail")
     root.classList.add(theme)
-    localStorage.setItem("youtube-theme", theme)
   }, [theme])
 
-  useEffect(() => {
-    localStorage.setItem("youtube-language", language)
-  }, [language])
+  // 統一儲存：把目前播放清單的排序方式、排列順序與播放位置寫入 byPlaylist，
+  // 連同設定 / 播放模式 / 主題 / 語言一起存成單一狀態檔
+  const persistPlayerState = useCallback(() => {
+    if (currentPlaylistId) {
+      byPlaylistRef.current[currentPlaylistId] = {
+        sortMode,
+        order: videos.map((v) => v.videoId),
+        index: currentVideoIndex,
+        videoId: videos[currentVideoIndex]?.videoId ?? null,
+      }
+    }
+    const state: StoredPlayerState = {
+      currentPlaylistId,
+      byPlaylist: byPlaylistRef.current,
+      settings,
+      playMode,
+      theme,
+      language,
+    }
+    localStorage.setItem(PLAYER_STATE_KEY, JSON.stringify(state))
+  }, [currentPlaylistId, videos, currentVideoIndex, sortMode, settings, playMode, theme, language])
 
   useEffect(() => {
-    if (videos.length > 0) {
-      localStorage.setItem("youtube-sorted-videos", JSON.stringify(videos))
+    if (!isHydrated) return
+    persistPlayerState()
+  }, [isHydrated, persistPlayerState])
+
+  // 播放清單影片資料較大，單獨存放，僅在清單增刪 / 更新時寫入
+  useEffect(() => {
+    if (!isHydrated) return
+    if (playlists.length > 0) {
+      localStorage.setItem(PLAYLISTS_KEY, JSON.stringify(playlists))
+    } else {
+      localStorage.removeItem(PLAYLISTS_KEY)
     }
-  }, [videos])
+  }, [playlists, isHydrated])
 
   const handlePlaylistLoad = async (id: string, name?: string) => {
     console.log("[v0] Loading playlist with ID:", id)
@@ -261,14 +353,32 @@ export default function Home() {
 
   const handlePlaylistSelect = (playlistId: string) => {
     const playlist = playlists.find((p) => p.id === playlistId)
-    if (playlist) {
-      setCurrentPlaylistId(playlist.id)
-      setOriginalVideos(playlist.videos)
+    if (!playlist) return
+
+    setCurrentPlaylistId(playlist.id)
+    setOriginalVideos(playlist.videos)
+
+    // 還原此播放清單先前保存的排序方式、排列順序與播放位置
+    const saved = byPlaylistRef.current[playlistId]
+    if (saved) {
+      const ordered = buildOrderedVideos(playlist.videos, saved.order)
+      let restoredIndex = 0
+      if (saved.videoId) {
+        const foundIndex = ordered.findIndex((v) => v.videoId === saved.videoId)
+        restoredIndex = foundIndex !== -1 ? foundIndex : Math.min(saved.index ?? 0, ordered.length - 1)
+      } else if (typeof saved.index === "number") {
+        restoredIndex = Math.min(saved.index, ordered.length - 1)
+      }
+      setVideos(ordered)
+      setCurrentVideoIndex(Math.max(0, restoredIndex))
+      setSortMode(saved.sortMode ?? "original")
+    } else {
       setVideos(playlist.videos)
       setCurrentVideoIndex(0)
       setSortMode("original")
-      setHasUserInteracted(false)
     }
+
+    setHasUserInteracted(false)
   }
 
   const handlePlaylistRefresh = async (playlistId: string) => {
@@ -337,24 +447,20 @@ export default function Home() {
     const updatedPlaylists = playlists.filter((p) => p.id !== playlistId)
     setPlaylists(updatedPlaylists)
 
+    // 移除此播放清單保存的狀態
+    delete byPlaylistRef.current[playlistId]
+
     if (currentPlaylistId === playlistId) {
+      // 重置當前播放狀態，後續的狀態變更會觸發 effect 自動寫回
       setCurrentPlaylistId(null)
       setVideos([])
       setOriginalVideos([])
       setCurrentVideoIndex(0)
       setSortMode("original")
       setHasUserInteracted(false)
-      localStorage.removeItem("youtube-current-playlist")
-      localStorage.removeItem("youtube-sorted-videos")
-      localStorage.removeItem("youtube-video-index")
-      localStorage.removeItem("youtube-sort-mode")
-      localStorage.removeItem("youtube-current-video-id")
-    }
-
-    if (updatedPlaylists.length > 0) {
-      localStorage.setItem("youtube-playlists", JSON.stringify(updatedPlaylists))
     } else {
-      localStorage.removeItem("youtube-playlists")
+      // 刪除非當前清單時相依的 effect 不會觸發，需手動寫回
+      persistPlayerState()
     }
 
     toast({
@@ -461,9 +567,6 @@ export default function Home() {
 
     setVideos(sorted)
     setCurrentVideoIndex(0)
-    if (sorted.length > 0) {
-      localStorage.setItem("youtube-current-video-id", sorted[0].videoId)
-    }
   }
 
   const handleSortModeChange = (mode: SortMode) => {
